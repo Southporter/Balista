@@ -87,18 +87,15 @@ fun LauncherScreen(appRepository: AppRepository) {
             }
         }
 
-        // Scroll indicators - only show when there are more items than can fit on screen
-        val canScroll = listState.canScrollForward || listState.canScrollBackward
-        if (enabledApps.size > 9 && canScroll) {
-            ScrollIndicators(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 24.dp),
-                totalItems = enabledApps.size,
-                visibleItems = 9,
-                listState = listState
-            )
-        }
+        // Simple scroll indicator
+        SimpleScrollIndicator(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 16.dp),
+            listState = listState,
+            totalItems = enabledApps.size,
+            itemsPerScreen = 9
+        )
     }
 }
 
@@ -128,41 +125,74 @@ fun AppListItem(
 }
 
 @Composable
-fun ScrollIndicators(
+fun SimpleScrollIndicator(
     modifier: Modifier = Modifier,
+    listState: LazyListState,
     totalItems: Int,
-    visibleItems: Int,
-    listState: LazyListState
+    itemsPerScreen: Int = 9
 ) {
-    val firstVisibleIndex by derivedStateOf {
-        listState.firstVisibleItemIndex
-    }
-
-    val currentPage = (firstVisibleIndex / visibleItems).coerceAtMost((totalItems - 1) / visibleItems)
-    val totalPages = (totalItems + visibleItems - 1) / visibleItems
-
-    if (totalPages > 1) {
+    val canScrollUp = listState.canScrollBackward
+    val canScrollDown = listState.canScrollForward
+    
+    // Only show indicator if there are more items than fit on one screen
+    if (totalItems > itemsPerScreen && (canScrollUp || canScrollDown)) {
         Column(
             modifier = modifier,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            repeat(totalPages) { page ->
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (page == currentPage) {
-                                MaterialTheme.colorScheme.onBackground
-                            } else {
-                                MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
-                            }
-                        )
-                )
+            // Show up to 2 dots maximum based on scroll position
+            when {
+                canScrollUp && canScrollDown -> {
+                    // In the middle - show unfilled dot above, filled dot for current position
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground)
+                    )
+                }
+                canScrollUp -> {
+                    // Can only scroll up - show unfilled dot above, filled dot for current position
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground)
+                    )
+                }
+                canScrollDown -> {
+                    // Can only scroll down - show filled dot for current position, unfilled dot below
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f))
+                    )
+                }
             }
         }
     }
 }
+
 
 private fun launchApp(context: Context, app: AppItem) {
     try {

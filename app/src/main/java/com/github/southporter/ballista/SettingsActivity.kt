@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -48,7 +49,7 @@ class SettingsActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SettingsScreen(
+                    SettingsNavigation(
                         appRepository = appRepository,
                         onBackPressed = { finish() }
                     )
@@ -58,24 +59,44 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+enum class SettingsScreen {
+    MAIN, SORT_APPS, MANAGE_APPS
+}
+
 @Composable
-fun SettingsScreen(
+fun SettingsNavigation(
     appRepository: AppRepository,
     onBackPressed: () -> Unit
 ) {
-    val context = LocalContext.current
-    var allApps by remember { mutableStateOf(appRepository.getAllApps()) }
-    var showEditDialog by remember { mutableStateOf(false) }
-    var editingApp by remember { mutableStateOf<AppItem?>(null) }
+    var currentScreen by remember { mutableStateOf(SettingsScreen.MAIN) }
     
-    val reorderableLazyListState = rememberReorderableLazyListState(onMove = { from, to ->
-        val newList = allApps.toMutableList()
-        val item = newList.removeAt(from.index)
-        newList.add(to.index, item)
-        allApps = newList
-        appRepository.reorderApps(newList)
-    })
+    when (currentScreen) {
+        SettingsScreen.MAIN -> MainSettingsScreen(
+            appRepository = appRepository,
+            onBackPressed = onBackPressed,
+            onNavigateToSortApps = { currentScreen = SettingsScreen.SORT_APPS },
+            onNavigateToManageApps = { currentScreen = SettingsScreen.MANAGE_APPS }
+        )
+        SettingsScreen.SORT_APPS -> SortAppsScreen(
+            appRepository = appRepository,
+            onBackPressed = { currentScreen = SettingsScreen.MAIN }
+        )
+        SettingsScreen.MANAGE_APPS -> ManageAppsScreen(
+            appRepository = appRepository,
+            onBackPressed = { currentScreen = SettingsScreen.MAIN }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainSettingsScreen(
+    appRepository: AppRepository,
+    onBackPressed: () -> Unit,
+    onNavigateToSortApps: () -> Unit,
+    onNavigateToManageApps: () -> Unit
+) {
+    val context = LocalContext.current
     
     Column(
         modifier = Modifier
@@ -104,94 +125,39 @@ fun SettingsScreen(
             )
         )
         
-        // Apps section header
-        Text(
-            text = "Apps",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
-        )
-        
-        LazyColumn(
-            state = reorderableLazyListState.listState,
+        // Settings menu options
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 16.dp)
-                .reorderable(reorderableLazyListState)
-                .detectReorderAfterLongPress(reorderableLazyListState),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            
-            itemsIndexed(allApps, key = { _, app -> app.id }) { index, app ->
-                ReorderableItem(
-                    reorderableState = reorderableLazyListState,
-                    key = app.id
-                ) { isDragging ->
-                    DraggableAppToggleItem(
-                        app = app,
-                        onToggle = { enabled ->
-                            appRepository.toggleApp(app.id, enabled)
-                            allApps = allApps.map { 
-                                if (it.id == app.id) it.copy(isEnabled = enabled) else it 
-                            }
-                        },
-                        onEditName = {
-                            editingApp = app
-                            showEditDialog = true
-                        },
-                        isDragging = isDragging
-                    )
-                }
-            }
-        }
-        
-        // System section header
-        Text(
-            text = "System",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
-        )
-        
-        // Set as default launcher item
-        Box(
-            modifier = Modifier.padding(horizontal = 16.dp)
-        ) {
-            SetDefaultLauncherItem(
-                onClick = { openDefaultAppsSettings(context) }
+            SettingsMenuItem(
+                title = "Sort Apps",
+                description = "Reorder your apps",
+                onClick = onNavigateToSortApps
             )
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // System settings item
-        Box(
-            modifier = Modifier.padding(horizontal = 16.dp)
-        ) {
-            SystemSettingsItem(
+            
+            SettingsMenuItem(
+                title = "Manage Apps",
+                description = "Toggle apps and edit names",
+                onClick = onNavigateToManageApps
+            )
+            
+            SettingsMenuItem(
+                title = "Set as Default Launcher",
+                description = "Make Ballista your home screen",
+                onClick = { openDefaultAppsSettings(context) },
+                isHighlighted = true
+            )
+            
+            SettingsMenuItem(
+                title = "Phone Settings",
+                description = "Open system settings",
                 onClick = { openSystemSettings(context) }
             )
         }
-    }
-    
-    // Edit name dialog
-    if (showEditDialog && editingApp != null) {
-        EditNameDialog(
-            app = editingApp!!,
-            onDismiss = { 
-                showEditDialog = false
-                editingApp = null
-            },
-            onSave = { newName ->
-                appRepository.setCustomDisplayName(editingApp!!.id, newName)
-                allApps = appRepository.getAllApps()
-                showEditDialog = false
-                editingApp = null
-            }
-        )
     }
 }
 
@@ -298,6 +264,57 @@ fun DraggableAppToggleItem(
                 text = "Always On",
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 14.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsMenuItem(
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    isHighlighted: Boolean = false
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHighlighted) {
+                MaterialTheme.colorScheme.tertiaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isHighlighted) {
+                    MaterialTheme.colorScheme.onTertiaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = description,
+                fontSize = 14.sp,
+                color = if (isHighlighted) {
+                    MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                }
             )
         }
     }
@@ -444,6 +461,285 @@ private fun openDefaultAppsSettings(context: android.content.Context) {
             // Final fallback to general settings
             val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
             context.startActivity(intent)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SortAppsScreen(
+    appRepository: AppRepository,
+    onBackPressed: () -> Unit
+) {
+    val context = LocalContext.current
+    val enabledApps by appRepository.enabledApps.collectAsStateWithLifecycle()
+    var reorderableApps by remember { mutableStateOf<List<AppItem>>(enabledApps) }
+    
+    // Update reorderable apps when enabled apps change
+    LaunchedEffect(enabledApps) {
+        reorderableApps = enabledApps
+    }
+    
+    val reorderableLazyListState = rememberReorderableLazyListState(onMove = { from, to ->
+        val newList = reorderableApps.toMutableList()
+        val item = newList.removeAt(from.index)
+        newList.add(to.index, item)
+        reorderableApps = newList
+        appRepository.reorderApps(newList)
+    })
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = 16.dp)
+    ) {
+        // Top bar
+        TopAppBar(
+            title = {
+                Text(
+                    text = "Sort Apps",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onBackPressed) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        )
+        
+        // Instruction text
+        Text(
+            text = "Long press and drag to reorder your apps",
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+        )
+        
+        LazyColumn(
+            state = reorderableLazyListState.listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 16.dp)
+                .reorderable(reorderableLazyListState)
+                .detectReorderAfterLongPress(reorderableLazyListState),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(reorderableApps, key = { app -> app.id }) { app ->
+                ReorderableItem(
+                    reorderableState = reorderableLazyListState,
+                    key = app.id
+                ) { isDragging ->
+                    SortableAppItem(
+                        app = app,
+                        isDragging = isDragging
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SortableAppItem(
+    app: AppItem,
+    isDragging: Boolean
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDragging) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDragging) 8.dp else 2.dp
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Drag handle
+            Column(
+                modifier = Modifier.padding(end = 16.dp)
+            ) {
+                repeat(2) {
+                    Box(
+                        modifier = Modifier
+                            .width(20.dp)
+                            .height(2.dp)
+                            .background(
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                                RoundedCornerShape(1.dp)
+                            )
+                    )
+                    if (it == 0) Spacer(modifier = Modifier.height(4.dp))
+                }
+            }
+            
+            Text(
+                text = app.displayName,
+                fontSize = 16.sp,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ManageAppsScreen(
+    appRepository: AppRepository,
+    onBackPressed: () -> Unit
+) {
+    val context = LocalContext.current
+    var allApps by remember { mutableStateOf(appRepository.getAllApps()) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editingApp by remember { mutableStateOf<AppItem?>(null) }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = 16.dp)
+    ) {
+        // Top bar
+        TopAppBar(
+            title = {
+                Text(
+                    text = "Manage Apps",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onBackPressed) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        )
+        
+        // Instruction text
+        Text(
+            text = "Toggle apps and tap edit to change names",
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+        )
+        
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            itemsIndexed(allApps, key = { _, app -> app.id }) { index, app ->
+                ManageableAppItem(
+                    app = app,
+                    onToggle = { enabled ->
+                        appRepository.toggleApp(app.id, enabled)
+                        allApps = allApps.map { 
+                            if (it.id == app.id) it.copy(isEnabled = enabled) else it 
+                        }
+                    },
+                    onEditName = {
+                        editingApp = app
+                        showEditDialog = true
+                    }
+                )
+            }
+        }
+    }
+    
+    // Edit name dialog
+    if (showEditDialog && editingApp != null) {
+        EditNameDialog(
+            app = editingApp!!,
+            onDismiss = { 
+                showEditDialog = false
+                editingApp = null
+            },
+            onSave = { newName ->
+                appRepository.setCustomDisplayName(editingApp!!.id, newName)
+                allApps = appRepository.getAllApps()
+                showEditDialog = false
+                editingApp = null
+            }
+        )
+    }
+}
+
+@Composable
+fun ManageableAppItem(
+    app: AppItem,
+    onToggle: (Boolean) -> Unit,
+    onEditName: () -> Unit
+) {
+    var isEnabled by remember { mutableStateOf(app.isEnabled) }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = app.displayName,
+                fontSize = 16.sp,
+                modifier = Modifier.weight(1f)
+            )
+            
+            // Edit button for display name
+            IconButton(
+                onClick = onEditName,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit name",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            
+            // Only show toggle switch for non-Settings apps
+            if (app.id != "settings") {
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = { enabled ->
+                        isEnabled = enabled
+                        onToggle(enabled)
+                    }
+                )
+            } else {
+                Text(
+                    text = "Always On",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
